@@ -1,6 +1,9 @@
 import domready from "domready"
 import "./style.css"
+import weightedRandom from "./weightedRandom"
+import randomPalette, { randomPaletteWithBlack } from "./randomPalette"
 import Color from "./Color"
+
 
 const PHI = (1 + Math.sqrt(5)) / 2;
 const TAU = Math.PI * 2;
@@ -17,41 +20,129 @@ const config = {
 let ctx;
 let canvas;
 
+const layers = weightedRandom([
+    1, () => 0,
+    1, () => 0,
+])
 
-class Pos
-{
-    x = 0
-    y = 0
-    r = 0
-    angle = 0
 
-    constructor(x,y,r,angle)
+class Rect {
+    x
+    y
+    size
+    constructor(x, y, size)
     {
         this.x = x
         this.y = y
-        this.r = r
-        this.angle = angle
+        this.size = size
     }
+
 }
 
-function drawFan(pos0, pos1, color = "#f00")
+
+function subdivide(rect, probability, probability2, min)
 {
-    ctx.fillStyle = color
-    ctx.beginPath()
-    ctx.moveTo(pos0.x,pos0.y);
-    ctx.lineTo(
-        pos0.x + Math.cos(pos0.angle) * pos0.r,
-        pos0.y + Math.sin(pos0.angle) * pos0.r
-    )
-    ctx.lineTo(
-        pos1.x + Math.cos(pos1.angle) * pos1.r,
-        pos1.y + Math.sin(pos1.angle) * pos1.r
-    )
-    ctx.lineTo(pos1.x,pos1.y);
-    ctx.lineTo(pos0.x,pos0.y);
-    ctx.fill()
+    const {x, y, size} = rect
+
+    const newSize = size * 0.5
+
+    if (newSize < min || (newSize < 100 && Math.random() < probability2))
+    {
+        return false
+    }
+
+    const out = []
+    if (Math.random() < probability)
+    {
+        out.push(
+            new Rect(
+                x, y, newSize
+            )
+        )
+    }
+
+    if (Math.random() < probability)
+    {
+        out.push(
+            new Rect(
+                x, y + size - newSize, newSize
+            )
+        )
+    }
+
+    if (Math.random() < probability)
+    {
+        out.push(
+            new Rect(
+                x + size - newSize, y, newSize
+            )
+        )
+    }
+
+    if (Math.random() < probability)
+    {
+        out.push(
+            new Rect(
+                x + size - newSize, y + size - newSize, newSize
+            )
+        )
+    }
+    return out
 }
 
+
+function createRects(probability, probability2, min = 1)
+{
+    const { width, height } = config
+    const size = Math.max(width, height)
+
+    const cx = width >> 1
+    const cy = height >> 1
+
+    let rects = subdivide(
+        new Rect(
+            cx - size / 2, cy - size / 2,
+            size
+        ),
+        probability,
+        probability2,
+        min
+    )
+
+    const done = []
+
+    let newRects
+    do
+    {
+        newRects = []
+        for (let i = 0; i < rects.length; i++)
+        {
+            const rect = rects[i]
+            const sub = subdivide(
+                rect,
+                probability,
+                probability2,
+                min
+            )
+            if (!sub)
+            {
+                done.push(rect)
+            }
+            else
+            {
+                newRects = newRects.concat(sub)
+            }
+        }
+
+        rects = newRects
+
+    } while (rects.length)
+
+    console.log("DONE", done)
+    return done
+}
+
+const white = Color.from("#fff")
 
 domready(
     () => {
@@ -68,48 +159,40 @@ domready(
         canvas.width = width;
         canvas.height = height;
 
+        const cx = width >> 1
+        const cy = height >> 1
+
         const paint = () => {
 
-            ctx.fillStyle = "#000";
-            ctx.fillRect(0,0, width, height);
+            const palette = randomPaletteWithBlack()
 
-            ctx.fillStyle = "rgba(255,0,0,0.2)";
-
-            let cx = width >> 1
-            const cy = height >> 1
-
-            const slices = 600
-            const step = TAU/slices
-            let angle = 0
-
-            let pos
-            let prev = null
-
-            let first
-
-            const s0 = 1 + Math.random() * 20
-            const s1 = 1 + Math.random() * 20
-
-            for (let i=0; i < slices; i++)
+            let bg,fg
+            if (Math.random() < 0.5)
             {
-                const nextAngle = angle + step
-
-                pos = new Pos(cx + Math.cos(angle * s0) * 400 ,cy + Math.sin(angle * s0) * 400, 300 + + Math.cos(angle * s1) * 230, angle)
-                if (prev)
-                {
-                    drawFan( prev, pos, Color.fromHSL(angle/TAU, 0.7 + Math.random() * 0.3, 0.5).toRGBA(0.5))
-                }
-
-                angle = nextAngle
-
-                if (!prev)
-                {
-                    first = pos
-                }
-                prev = pos
+                bg = palette[0]
+                fg = Color.from(palette[palette.length - 1]).mix(white, 0.5).toRGBHex()
+            }
+            else
+            {
+                bg = Color.from(palette[palette.length - 1]).mix(white, 0.5).toRGBHex()
+                fg = palette[0]
             }
 
-            drawFan( prev, first, Color.fromHSL(angle/TAU, 0.8, 0.5).toRGBA(0.2))
+            ctx.fillStyle = bg
+            ctx.fillRect(0,0, width, height);
+
+            const done = createRects(0.91, 0.05, 4)
+
+            ctx.strokeStyle = fg
+            for (let i = 0; i < done.length; i++)
+            {
+                const {x,y,size} = done[i]
+
+                ctx.fillStyle = palette[0|Math.random() * palette.length]
+                ctx.fillRect(x,y,size,size)
+                ctx.strokeRect(x,y,size,size)
+
+            }
 
         }
 
