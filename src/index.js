@@ -3,6 +3,7 @@ import "./style.css"
 import weightedRandom from "./weightedRandom"
 import randomPalette, { randomPaletteWithBlack } from "./randomPalette"
 import Color from "./Color"
+import AABB from "./AABB"
 
 
 const PHI = (1 + Math.sqrt(5)) / 2;
@@ -26,123 +27,62 @@ const layers = weightedRandom([
 ])
 
 
-class Rect {
-    x
-    y
-    size
-    constructor(x, y, size)
-    {
-        this.x = x
-        this.y = y
-        this.size = size
-    }
-
-}
 
 
-function subdivide(rect, probability, probability2, min)
-{
-    const {x, y, size} = rect
-
-    const newSize = size * 0.5
-
-    if (newSize < min || (newSize < 100 && Math.random() < probability2))
-    {
-        return false
-    }
-
-    const out = []
-    if (Math.random() < probability)
-    {
-        out.push(
-            new Rect(
-                x, y, newSize
-            )
-        )
-    }
-
-    if (Math.random() < probability)
-    {
-        out.push(
-            new Rect(
-                x, y + size - newSize, newSize
-            )
-        )
-    }
-
-    if (Math.random() < probability)
-    {
-        out.push(
-            new Rect(
-                x + size - newSize, y, newSize
-            )
-        )
-    }
-
-    if (Math.random() < probability)
-    {
-        out.push(
-            new Rect(
-                x + size - newSize, y + size - newSize, newSize
-            )
-        )
-    }
-    return out
-}
 
 
-function createRects(probability, probability2, min = 1)
-{
-    const { width, height } = config
-    const size = Math.max(width, height)
-
-    const cx = width >> 1
-    const cy = height >> 1
-
-    let rects = subdivide(
-        new Rect(
-            cx - size / 2, cy - size / 2,
-            size
-        ),
-        probability,
-        probability2,
-        min
-    )
-
-    const done = []
-
-    let newRects
-    do
-    {
-        newRects = []
-        for (let i = 0; i < rects.length; i++)
-        {
-            const rect = rects[i]
-            const sub = subdivide(
-                rect,
-                probability,
-                probability2,
-                min
-            )
-            if (!sub)
-            {
-                done.push(rect)
-            }
-            else
-            {
-                newRects = newRects.concat(sub)
-            }
-        }
-
-        rects = newRects
-
-    } while (rects.length)
-
-    console.log("DONE", done)
-    return done
-}
 
 const white = Color.from("#fff")
+const shadow = Color.from("#041426")
+const greenA = Color.from("#081")
+const greenB = Color.from("#b9aa00")
+
+
+function drawCrown(x,y,color, ratio = 0.9, ratio2 = 0)
+{
+    const colorA = Color.from(color).mix(shadow, ratio2).toRGBHex();
+    const colorB = Color.from(color).mix(shadow, ratio).toRGBHex();
+
+    ctx.save()
+    ctx.beginPath()
+
+    const aabb = new AABB()
+
+    for (let i=0; i < 800; i++)
+    {
+        const angle = TAU * Math.random()
+        const r = 140 * Math.sqrt(Math.random())
+
+        const size = Math.round(2 + Math.pow(Math.random(),4) * 8)
+        let x2 = x + Math.cos(angle) * r
+        let y2 = y + Math.sin(angle) * r
+
+        aabb.add(x2,y2)
+        
+        ctx.moveTo(
+            x2 + size,
+            y2,
+        )
+        ctx.arc(x2,y2,size,0,TAU, true)
+    }
+    ctx.clip()
+
+    let gradient = ctx.createLinearGradient(
+        aabb.minX, aabb.minY,
+        aabb.maxX, aabb.maxY
+    )
+    gradient.addColorStop(0,colorA)
+    gradient.addColorStop(1,colorB)
+    ctx.fillStyle = gradient
+
+    ctx.fillRect(
+        aabb.minX, aabb.minY,
+        aabb.width, aabb.height
+    )
+
+    ctx.restore()
+}
+
 
 domready(
     () => {
@@ -166,33 +106,25 @@ domready(
 
             const palette = randomPaletteWithBlack()
 
-            let bg,fg
-            if (Math.random() < 0.5)
+            ctx.fillStyle = "#fff"
+            ctx.fillRect(0,0,width,height)
+
+            for (let i=0; i < 5; i++)
             {
-                bg = palette[0]
-                fg = Color.from(palette[palette.length - 1]).mix(white, 0.5).toRGBHex()
+                const angle = TAU * Math.random()
+                const r = 150 * Math.sqrt(Math.random())
+
+                let x2 = cx + Math.cos(angle) * r
+                let y2 = cy + Math.sin(angle) * r
+
+                drawCrown(
+                    x2, y2,
+                    greenA.mix(greenB, Math.random()).toRGBHex(),
+                    0.9,
+                    i < 2 ? 0.9 : 0.6
+                )
             }
-            else
-            {
-                bg = Color.from(palette[palette.length - 1]).mix(white, 0.5).toRGBHex()
-                fg = palette[0]
-            }
 
-            ctx.fillStyle = bg
-            ctx.fillRect(0,0, width, height);
-
-            const done = createRects(0.91, 0.05, 4)
-
-            ctx.strokeStyle = fg
-            for (let i = 0; i < done.length; i++)
-            {
-                const {x,y,size} = done[i]
-
-                ctx.fillStyle = palette[0|Math.random() * palette.length]
-                ctx.fillRect(x,y,size,size)
-                ctx.strokeRect(x,y,size,size)
-
-            }
 
         }
 
