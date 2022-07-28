@@ -39,19 +39,27 @@ const greenA = Color.from("#081")
 const greenB = Color.from("#b9aa00")
 
 
-const overdraw = 1.15
+const overdraw = 1/PHI
 
 function randomPoints(v)
 {
-    const {width, height} = config
+    const { width, height } = config
+
+    const cx = width >> 1
+    const cy = height >> 1
+
 
     let pts = []
-    const count = 1000 + 100 * Math.random()
+    const count = 20 + 36 * Math.random()
+
+    const w = Math.round(width * overdraw)
+    const h = Math.round(height * overdraw)
+
     for (let i = 0; i < count; i++)
     {
         pts.push([
-            Math.random() * width * overdraw,
-            Math.random() * height * overdraw,
+            cx - w/2 + Math.random() * w,
+            cy - h/2 + Math.random() * h
         ])
     }
     return pts
@@ -67,8 +75,6 @@ function relax(v,pts, relaxCount = 3)
     }
     return pts
 }
-
-const limit = 1000
 
 
 function randomPair(palette)
@@ -86,85 +92,100 @@ function randomPair(palette)
     ]
 }
 
-
-function shorten(centroid, x0, y0, amount)
+function circumcircle(polygon)
 {
-    const dx = x0 - centroid[0]
-    const dy = y0 - centroid[1]
-    const l = Math.sqrt(dx*dx+dy*dy);
+    const centroid = polygonCentroid(polygon)
 
-    if (l <= amount)
+    const vertices= []
+    for (let i = 0; i < polygon.length; i++)
     {
-        return [x0,y0]
+        const [x, y] = polygon[i]
+        const dx = x - centroid[0]
+        const dy = y - centroid[1]
+        let d = Math.sqrt(dx * dx + dy * dy)
+
+        vertices.push([
+            x,y,d
+        ])
     }
-    
-    return [
-        centroid[0] + dx * (l - amount) / l,
-        centroid[1] + dy * (l - amount) / l
-    ]
-}
 
+    vertices.sort((a,b) => b[2] - a[2])
 
-function shrink(polygon, centroid, amount = 10)
-{
-    const last = polygon.length - 1
-    const vertexA = Math.floor(Math.random() * polygon.length)
-    const vertexB = vertexA === last ? 0 : vertexA + 1
+    let [ax,ay] = vertices[0]
+    let [bx,by] = vertices[1]
+    let [cx,cy] = vertices[2]
 
-    const [x0,y0] = polygon[vertexA]
-    const [x1,y1] = polygon[vertexB]
+    bx -= ax
+    by -= ay
+    cx -= ax
+    cy -= ay
 
-    polygon[vertexA] = shorten(centroid, x0, y0, amount)
-    polygon[vertexB] = shorten(centroid, x1, y1, amount)
+    const d = (2 * (bx * cy - by * cx))
+
+    let cSquared = cx * cx + cy * cy
+    let bSquared = bx * bx + by * by
+    const ux = 1/d * (cy * bSquared - by * cSquared)
+    const uy = 1/d * (bx * cSquared - cx * bSquared)
+
+    const r = Math.sqrt(ux*ux + uy*uy);
+    let result = [ux + ax, uy + ay,r]
+
+    console.log("circumcircle", result)
+    return result
 }
 
 
 function drawPolygon(polygon, palette)
 {
-    const [colorA, colorB] = randomPair(palette)
-    let even = false
-    let area
-    const centroid = polygonCentroid(polygon)
+    const last = polygon.length - 1
+    const [x1, y1] = polygon[last]
 
-    do
+    ctx.beginPath()
+    ctx.moveTo(
+        x1 | 0,
+        y1 | 0
+    )
+
+    for (let i = 0; i < polygon.length; i++)
     {
-        const last = polygon.length - 1
-        const [x1, y1] = polygon[last]
-
-        ctx.fillStyle = palette[0|Math.random() * palette.length] 
-        ctx.beginPath()
-        ctx.moveTo(
-            x1 | 0,
-            y1 | 0
-        )
-
-        for (let j = 0; j < polygon.length; j++)
-        {
-            const [x1, y1] = polygon[j]
-
-            ctx.lineTo(x1 | 0, y1 | 0)
-        }
-        ctx.fill()
-
-        shrink(polygon, centroid, 20)
-        even = !even
-
-        area = polygonArea(polygon)
-    }while(area > limit)
+        const [x1, y1] = polygon[i]
+        ctx.lineTo(x1 | 0, y1 | 0)
+    }
+    ctx.fill()
+    ctx.stroke()
 }
 
-
-function drawPolygons(diagram, palette)
+function drawPolygons(polygons, palette)
 {
     const { width, height } = config
 
     ctx.save()
-    ctx.translate(Math.round(-(width * overdraw - width ) * 0.5), Math.round(-(height * overdraw - height ) * 0.5))
-    const polygons = diagram.polygons()
+    //ctx.translate(Math.round(-(width * overdraw - width ) * 0.5), Math.round(-(height * overdraw - height ) * 0.5))
     for (let i = 0; i < polygons.length; i++)
     {
         const polygon = polygons[i]
-        drawPolygon(polygon.slice(), palette)
+        if (polygon)
+        {
+            const [colorA, colorB] = randomPair(palette)
+            ctx.strokeStyle = colorA
+            ctx.fillStyle = Color.from(colorB).toRGBA(0.618)
+            ctx.lineWidth = Math.round(Math.min(width, height) / 270)
+
+            if (Math.random() < 0.5)
+            {
+                drawPolygon(polygon, palette)
+            }
+            else
+            {
+                const [x,y,r] = circumcircle(polygon)
+                ctx.beginPath()
+                ctx.moveTo(x + r, y)
+                ctx.arc(x, y, r, 0, TAU, true)
+                ctx.fill()
+                ctx.stroke()
+            }
+
+        }
     }
     ctx.restore()
 }
@@ -194,12 +215,18 @@ domready(
             ctx.fillStyle = Math.random() < 0.5 ? "#000" : "#fff"
             ctx.fillRect(0,0,width,height)
 
-            const v = voronoi().extent([[0, 0], [width * overdraw, height * overdraw]])
-            const pts = relax(v, randomPoints(v), 10);
+            const hw = Math.round(width * overdraw * 0.5)
+            const hh = Math.round(height * overdraw * 0.5)
+
+            const v = voronoi().extent([[cx - hw, cy - hh], [cx + hw, cy + hh]])
+            const pts = relax(v, randomPoints(v), Math.pow(Math.random(),4) * 100);
 
             const diagram = v(pts)
             ctx.strokeStyle = "#044";
-            drawPolygons(diagram, palette)
+
+            const polygons = diagram.polygons()
+
+            drawPolygons(polygons, palette)
         }
 
         paint()
